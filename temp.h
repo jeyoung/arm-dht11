@@ -24,6 +24,6 @@
 #define STK_LOAD        (*((volatile unsigned long *)((STK) + 0x04UL)))
 #define STK_VAL         (*((volatile unsigned long *)((STK) + 0x08UL)))
 
-#define OUTPUT_LENGTH   7
+#define OUTPUT_LENGTH   10
 
 int main(void);

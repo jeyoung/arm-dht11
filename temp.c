@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <string.h>
 #include "dht11.h"
 #include "temp.h"
 
@@ -6,6 +7,9 @@ static volatile uint32_t timer = 0;
 
 void
 format(uint16_t integral, uint16_t decimal, char * buffer, uint8_t size);
+
+void
+send(char * buffer, uint8_t size);
 
 int
 main(void)
@@ -26,9 +30,8 @@ main(void)
 
     // Configure PA6 for debugging output
     GPIOA_MODER   |= (0x01 << 0x0C);
-    GPIOA_OTYPER  |= (0x01 << 0x06);
     GPIOA_OSPEEDR |= (0x03 << 0x06);
-    GPIOA_PUPDR   |= (0x01 << 0x06);
+    GPIOA_PUPDR   |= (0x01 << 0x0C);
 
     // Enable USART1
     RCC_APB2ENR |= (0x01 << 0x04);
@@ -39,10 +42,10 @@ main(void)
 
     // Use AHB (not pre-scaled) as the SysTick clock
     STK_CTRL    |= (0x01 << 0x02);
-    // At the HSI 16MHz, this gives 9us granularity. Pick a prime number that
+    // At the HSI 16MHz, this gives 3us granularity. Pick a prime number that
     // is not too big to minimise the risk of the time check coinciding with
     // the rising edge of the signal.
-    STK_LOAD     = 144UL;
+    STK_LOAD     = 48UL;
     STK_VAL      = 0UL;
     STK_CTRL    |= (0x01 << 0x0) | (0x01 << 0x1);
 
@@ -61,32 +64,38 @@ main(void)
             uint8_t t_decimal   = 0;
 
             uint8_t result = get_readings(&rh_integral, &rh_decimal, &t_integral, &t_decimal);
-            // TODO: Read result to determine outcome
 
-            // Send the readings to USART
-            char temperature[OUTPUT_LENGTH];
-            format(t_integral, t_decimal, temperature, OUTPUT_LENGTH);
-            for (int i=0; i<OUTPUT_LENGTH; i++)
+            if (result != 160)
             {
-                USART1_DR = temperature[i];
-                while (!(USART1_SR & (0x01 << 0x06)))
-                    ;
+                char * message = "STATE: ";
+
+                char output[OUTPUT_LENGTH];
+                format(result, 0, output, OUTPUT_LENGTH);
+
+                for (uint8_t n=0; n<strlen(message)-1; n++)
+                    output[n] = message[n];
+
+                send(output, OUTPUT_LENGTH);
+            }
+            else
+            {
+                // Send the readings to USART
+                char temperature[OUTPUT_LENGTH];
+                format(t_integral, t_decimal, temperature, OUTPUT_LENGTH);
+                send(temperature, OUTPUT_LENGTH);
+
+                char rh[OUTPUT_LENGTH];
+                format(rh_integral, rh_decimal, rh, OUTPUT_LENGTH);
+                send(rh, OUTPUT_LENGTH);
             }
 
-            char rh[OUTPUT_LENGTH];
-            format(rh_integral, rh_decimal, rh, OUTPUT_LENGTH);
-            for (int i=0; i<OUTPUT_LENGTH; i++)
-            {
-                USART1_DR = rh[i];
-                while (!(USART1_SR & (0x01 << 0x06)))
-                    ;
-            }
+            char * newline = "\r\n";
+            send(newline, 2);
 
-            // ... followed by a TAB character
-            USART1_DR = '\t';
-            while (!(USART1_SR & (0x01 << 0x06)))
-                ;
+            // Output to PA6 for debugging
+            GPIOA_ODR ^= (0x01 << 0x06);
         }
+
     }
 
     __asm("CPSID i");
@@ -97,14 +106,12 @@ main(void)
 void
 Systick_Handler(void)
 {
-    timer += 9; // This must match the clock precision
+    timer += 3; // This must match the clock precision
 }
 
 uint8_t
 get_signal()
 {
-    // Output to PA6 for debugging
-    GPIOA_ODR ^= (0x01 << 0x06);
     return (GPIOA_IDR & (0x01 << 0x05)) ? HIGH : LOW;
 }
 
@@ -151,5 +158,16 @@ format(uint16_t integral, uint16_t decimal, char * buffer, uint8_t size)
         uint8_t digit = integral % 10;
         integral = integral / 10;
         buffer[size - c] = '0'+(char)digit;
+    }
+}
+
+void
+send(char * buffer, uint8_t size)
+{
+    for (int i=0; i<size; i++)
+    {
+        USART1_DR = buffer[i];
+        while (!(USART1_SR & (0x01 << 0x06)))
+            ;
     }
 }
