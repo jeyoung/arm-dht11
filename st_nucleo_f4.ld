@@ -43,5 +43,15 @@ SECTIONS
         . = ALIGN(4);
         _ebss = .;
     } > ram
+
+    .heap :
+    {
+        . = ALIGN(4);
+        heap_size = 4K;
+        PROVIDE(end = .);
+        PROVIDE(_heap_start = end);
+        . = . + heap_size;
+        PROVIDE(_heap_end = .);
+    } > ram
 }
 
